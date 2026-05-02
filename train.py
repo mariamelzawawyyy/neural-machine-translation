@@ -11,6 +11,10 @@ from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
+# 🔥 memory cleanup (important for Colab)
+torch.cuda.empty_cache()
+torch.cuda.ipc_collect()
+
 # =========================================================
 # 2️⃣ LOAD DATA + VOCAB
 # =========================================================
@@ -22,24 +26,24 @@ vocab.build_vocab(pairs)
 dataset = TranslationDataset(pairs, vocab)
 
 # =========================================================
-# 3️⃣ DATALOADER (FIX IMPORTANT)
+# 3️⃣ DATALOADER
 # =========================================================
 train_loader = DataLoader(
     dataset,
-    batch_size=32,
+    batch_size=16,   # 🔥 reduced from 32 (fix OOM)
     shuffle=True,
-    collate_fn=collate_fn   # 🔥 FIXED (this was your bug)
+    collate_fn=collate_fn
 )
 
 # =========================================================
-# 4️⃣ HYPERPARAMETERS
+# 4️⃣ HYPERPARAMETERS (SAFE VERSION)
 # =========================================================
 vocab_size = len(vocab.word2idx)
 
-embedding_size = 256
-hidden_size = 128
+embedding_size = 128   # 🔥 reduced (was 256)
+hidden_size = 64       # 🔥 reduced (was 128)
 num_layers = 1
-attn_dim = 256
+attn_dim = 128         # 🔥 reduced (was 256)
 
 num_epochs = 10
 lr = 0.001
@@ -80,9 +84,10 @@ for epoch in range(num_epochs):
     model.train()
     total_loss = 0
 
+    torch.cuda.empty_cache()  # 🔥 helps between epochs
+
     for src, trg in train_loader:
 
-        # 🔥 move to GPU
         src = src.to(device)
         trg = trg.to(device)
 
