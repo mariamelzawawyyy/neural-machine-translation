@@ -1,6 +1,5 @@
 import re
 import torch
-import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
 from torch.nn.utils.rnn import pad_sequence
@@ -29,7 +28,7 @@ def clean_sentence(s):
     return s.strip()
 
 # =========================================================
-# 3️⃣ LOAD DATA (Arabic → English)
+# 3️⃣ LOAD DATA
 # =========================================================
 def load_data():
     dataset = load_dataset("opus100", "ar-en", split="train[:20000]")
@@ -71,7 +70,13 @@ class Vocab:
 # 5️⃣ ENCODING
 # =========================================================
 def encode(vocab, sentence):
-    return [vocab.word2idx.get(w, UNK_IDX) for w in sentence.split()]
+    return [
+        vocab.word2idx.get(w, UNK_IDX)
+        for w in sentence.split()
+    ]
+
+def encode_src(vocab, sentence):
+    return encode(vocab, sentence) + [EOS_IDX]
 
 def encode_target(vocab, sentence):
     return [SOS_IDX] + encode(vocab, sentence) + [EOS_IDX]
@@ -90,13 +95,20 @@ class TranslationDataset(Dataset):
     def __getitem__(self, idx):
         ar, en = self.pairs[idx]
 
-        src = torch.tensor(encode(self.vocab, ar))
-        trg = torch.tensor(encode_target(self.vocab, en))
+        src = torch.tensor(
+            encode_src(self.vocab, ar),
+            dtype=torch.long
+        )
+
+        trg = torch.tensor(
+            encode_target(self.vocab, en),
+            dtype=torch.long
+        )
 
         return src, trg
 
 # =========================================================
-# 7️⃣ COLLATE FUNCTION (FIXED)
+# 7️⃣ COLLATE FUNCTION
 # =========================================================
 def collate_fn(batch):
     src_batch, trg_batch = zip(*batch)
@@ -134,5 +146,6 @@ def get_loaders(batch_size=32):
     )
 
     return loader, vocab
+
 
  
