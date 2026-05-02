@@ -3,28 +3,33 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from datasets import load_dataset
+from torch.nn.utils.rnn import pad_sequence
 
 # =========================================================
-# 1️⃣ CLEAN FUNCTION
+# 1️⃣ SPECIAL TOKENS
+# =========================================================
+PAD_IDX = 0
+SOS_IDX = 1
+EOS_IDX = 2
+UNK_IDX = 3
+
+# =========================================================
+# 2️⃣ CLEAN FUNCTION
 # =========================================================
 def clean_sentence(s):
     s = s.lower().strip()
 
-    # normalize punctuation
     s = re.sub(r"!+", " ! ", s)
     s = re.sub(r"\?+", " ? ", s)
 
-    # keep only arabic/english letters + basic punctuation
     s = re.sub(r"[^a-zA-Z0-9\u0600-\u06FF\s!?]", "", s)
 
-    # remove extra spaces
     s = re.sub(r"\s+", " ", s)
 
     return s.strip()
 
-
 # =========================================================
-# 2️⃣ LOAD DATA (Arabic → English)
+# 3️⃣ LOAD DATA (Arabic → English)
 # =========================================================
 def load_data():
     dataset = load_dataset("opus100", "ar-en", split="train[:20000]")
@@ -32,29 +37,16 @@ def load_data():
     pairs = []
 
     for item in dataset:
-        ar = item["translation"]["ar"]
-        en = item["translation"]["en"]
-
-        ar = clean_sentence(ar)
-        en = clean_sentence(en)
+        ar = clean_sentence(item["translation"]["ar"])
+        en = clean_sentence(item["translation"]["en"])
 
         if len(ar) > 0 and len(en) > 0:
             pairs.append((ar, en))
 
     return pairs
 
-
 # =========================================================
-# 3️⃣ SPECIAL TOKENS
-# =========================================================
-PAD_IDX = 0
-SOS_IDX = 1
-EOS_IDX = 2
-UNK_IDX = 3
-
-
-# =========================================================
-# 4️⃣ VOCAB CLASS
+# 4️⃣ VOCAB
 # =========================================================
 class Vocab:
     def __init__(self):
@@ -64,7 +56,6 @@ class Vocab:
             "<EOS>": EOS_IDX,
             "<UNK>": UNK_IDX
         }
-
         self.idx2word = {v: k for k, v in self.word2idx.items()}
         self.count = 4
 
@@ -76,17 +67,14 @@ class Vocab:
                     self.idx2word[self.count] = word
                     self.count += 1
 
-
 # =========================================================
-# 5️⃣ ENCODING FUNCTIONS
+# 5️⃣ ENCODING
 # =========================================================
 def encode(vocab, sentence):
-    return [vocab.word2idx.get(word, UNK_IDX) for word in sentence.split()]
-
+    return [vocab.word2idx.get(w, UNK_IDX) for w in sentence.split()]
 
 def encode_target(vocab, sentence):
     return [SOS_IDX] + encode(vocab, sentence) + [EOS_IDX]
-
 
 # =========================================================
 # 6️⃣ DATASET
@@ -102,14 +90,33 @@ class TranslationDataset(Dataset):
     def __getitem__(self, idx):
         ar, en = self.pairs[idx]
 
-        x = encode(self.vocab, ar)
-        y = encode_target(self.vocab, en)
+        src = torch.tensor(encode(self.vocab, ar))
+        trg = torch.tensor(encode_target(self.vocab, en))
 
-        return torch.tensor(x), torch.tensor(y)
-
+        return src, trg
 
 # =========================================================
-# 7️⃣ DATALOADER CREATION
+# 7️⃣ COLLATE FUNCTION (FIXED)
+# =========================================================
+def collate_fn(batch):
+    src_batch, trg_batch = zip(*batch)
+
+    src_batch = pad_sequence(
+        src_batch,
+        batch_first=True,
+        padding_value=PAD_IDX
+    )
+
+    trg_batch = pad_sequence(
+        trg_batch,
+        batch_first=True,
+        padding_value=PAD_IDX
+    )
+
+    return src_batch, trg_batch
+
+# =========================================================
+# 8️⃣ LOADERS
 # =========================================================
 def get_loaders(batch_size=32):
     pairs = load_data()
@@ -128,35 +135,4 @@ def get_loaders(batch_size=32):
 
     return loader, vocab
 
-
-# =========================================================
-# 8️⃣ COLLATE FUNCTION (IMPORTANT for padding)
-# =========================================================
-def collate_fn(batch):
-    src_batch, tgt_batch = zip(*batch)
-
-    src_max = max([len(x) for x in src_batch])
-    tgt_max = max([len(x) for x in tgt_batch])
-
-    src_padded = []
-    tgt_padded = []
-
-    for src, tgt in zip(src_batch, tgt_batch):
-
-        src = torch.cat([
-            src,
-            torch.full((src_max - len(src),), PAD_IDX)
-        ])
-
-        tgt = torch.cat([
-            tgt,
-            torch.full((tgt_max - len(tgt),), PAD_IDX)
-        ])
-
-        src_padded.append(src)
-        tgt_padded.append(tgt)
-
-    return torch.stack(src_padded), torch.stack(tgt_padded) 
-
-
-
+ 
