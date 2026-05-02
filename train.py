@@ -2,15 +2,14 @@ import torch
 import torch.nn as nn
 
 from model import Encoder, Decoder, Seq2Seq
-from data import load_data, Vocab, TranslationDataset, PAD_IDX
+from data import load_data, Vocab, TranslationDataset, PAD_IDX, collate_fn
 from torch.utils.data import DataLoader
-
 
 # =========================================================
 # 1️⃣ DEVICE
 # =========================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+print("Device:", device)
 
 # =========================================================
 # 2️⃣ LOAD DATA + VOCAB
@@ -22,16 +21,15 @@ vocab.build_vocab(pairs)
 
 dataset = TranslationDataset(pairs, vocab)
 
-
 # =========================================================
-# 3️⃣ DATALOADER
+# 3️⃣ DATALOADER (FIX IMPORTANT)
 # =========================================================
 train_loader = DataLoader(
     dataset,
     batch_size=32,
-    shuffle=True
+    shuffle=True,
+    collate_fn=collate_fn   # 🔥 FIXED (this was your bug)
 )
-
 
 # =========================================================
 # 4️⃣ HYPERPARAMETERS
@@ -46,7 +44,6 @@ attn_dim = 256
 num_epochs = 10
 lr = 0.001
 teacher_forcing_ratio = 0.5
-
 
 # =========================================================
 # 5️⃣ MODEL
@@ -69,13 +66,11 @@ decoder = Decoder(
 
 model = Seq2Seq(encoder, decoder).to(device)
 
-
 # =========================================================
 # 6️⃣ LOSS + OPTIMIZER
 # =========================================================
 criterion = nn.CrossEntropyLoss(ignore_index=PAD_IDX)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-
 
 # =========================================================
 # 7️⃣ TRAIN LOOP
@@ -83,11 +78,11 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 for epoch in range(num_epochs):
 
     model.train()
-
     total_loss = 0
 
     for src, trg in train_loader:
 
+        # 🔥 move to GPU
         src = src.to(device)
         trg = trg.to(device)
 
@@ -106,4 +101,6 @@ for epoch in range(num_epochs):
 
         total_loss += loss.item()
 
-    print(f"Epoch [{epoch+1}/{num_epochs}] Loss: {total_loss:.4f}") 
+    avg_loss = total_loss / len(train_loader)
+
+    print(f"Epoch [{epoch+1}/{num_epochs}] | Loss: {avg_loss:.4f}") 
