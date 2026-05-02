@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Device:", device)
 
-# 🔥 memory cleanup (important for Colab)
+# memory cleanup
 torch.cuda.empty_cache()
 torch.cuda.ipc_collect()
 
@@ -30,24 +30,23 @@ dataset = TranslationDataset(pairs, vocab)
 # =========================================================
 train_loader = DataLoader(
     dataset,
-    batch_size=16,   # 🔥 reduced from 32 (fix OOM)
+    batch_size=16,   # مناسب للـ GPU
     shuffle=True,
     collate_fn=collate_fn
 )
 
 # =========================================================
-# 4️⃣ HYPERPARAMETERS (SAFE VERSION)
+# 4️⃣ HYPERPARAMETERS
 # =========================================================
 vocab_size = len(vocab.word2idx)
 
 embedding_size = 192
 hidden_size = 96
 attn_dim = 192
-num_layers = 1 
+num_layers = 1
 
 num_epochs = 10
 lr = 0.001
-teacher_forcing_ratio = 0.5
 
 # =========================================================
 # 5️⃣ MODEL
@@ -81,10 +80,13 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 # =========================================================
 for epoch in range(num_epochs):
 
+    # 🔥 Teacher Forcing Schedule (مهم جدًا)
+    teacher_forcing_ratio = max(0.5 * (0.95 ** epoch), 0.1)
+
     model.train()
     total_loss = 0
 
-    torch.cuda.empty_cache()  # 🔥 helps between epochs
+    torch.cuda.empty_cache()
 
     for src, trg in train_loader:
 
@@ -95,17 +97,21 @@ for epoch in range(num_epochs):
 
         output = model(src, trg, teacher_forcing_ratio)
 
-        # remove <SOS>
+        # reshape
         output = output[:, 1:].reshape(-1, vocab_size)
         trg = trg[:, 1:].reshape(-1)
 
         loss = criterion(output, trg)
 
         loss.backward()
+
+        # 🔥 Gradient Clipping (مهم)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+
         optimizer.step()
 
         total_loss += loss.item()
 
     avg_loss = total_loss / len(train_loader)
 
-    print(f"Epoch [{epoch+1}/{num_epochs}] | Loss: {avg_loss:.4f}") 
+    print(f"Epoch [{epoch+1}/{num_epochs}] | Loss: {avg_loss:.4f} | TF: {teacher_forcing_ratio:.3f}") 
