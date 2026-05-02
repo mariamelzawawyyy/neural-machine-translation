@@ -40,10 +40,10 @@ train_loader = DataLoader(
 # =========================================================
 vocab_size = len(vocab.word2idx)
 
-embedding_size = 128   # 🔥 reduced (was 256)
-hidden_size = 64       # 🔥 reduced (was 128)
-num_layers = 1
-attn_dim = 128         # 🔥 reduced (was 256)
+embedding_size = 192
+hidden_size = 96
+attn_dim = 192
+num_layers = 1 
 
 num_epochs = 10
 lr = 0.001
