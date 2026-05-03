@@ -1,11 +1,11 @@
 import re
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, random_split
 from datasets import load_dataset
 from torch.nn.utils.rnn import pad_sequence
 
 # =========================================================
-# 1️⃣ SPECIAL TOKENS
+# 1️⃣ TOKENS
 # =========================================================
 PAD_IDX = 0
 SOS_IDX = 1
@@ -13,16 +13,14 @@ EOS_IDX = 2
 UNK_IDX = 3
 
 # =========================================================
-# 2️⃣ CLEAN FUNCTION
+# 2️⃣ CLEAN
 # =========================================================
 def clean_sentence(s):
     s = s.lower().strip()
 
     s = re.sub(r"!+", " ! ", s)
     s = re.sub(r"\?+", " ? ", s)
-
     s = re.sub(r"[^a-zA-Z0-9\u0600-\u06FF\s!?]", "", s)
-
     s = re.sub(r"\s+", " ", s)
 
     return s.strip()
@@ -30,11 +28,10 @@ def clean_sentence(s):
 # =========================================================
 # 3️⃣ LOAD DATA
 # =========================================================
-def load_data():
-    dataset = load_dataset("opus100", "ar-en", split="train[:20000]")
+def load_data(split="train", max_samples=20000):
+    dataset = load_dataset("opus100", "ar-en", split=f"{split}[:{max_samples}]")
 
     pairs = []
-
     for item in dataset:
         ar = clean_sentence(item["translation"]["ar"])
         en = clean_sentence(item["translation"]["en"])
@@ -60,20 +57,17 @@ class Vocab:
 
     def build_vocab(self, pairs):
         for ar, en in pairs:
-            for word in (ar + " " + en).split():
-                if word not in self.word2idx:
-                    self.word2idx[word] = self.count
-                    self.idx2word[self.count] = word
+            for w in (ar + " " + en).split():
+                if w not in self.word2idx:
+                    self.word2idx[w] = self.count
+                    self.idx2word[self.count] = w
                     self.count += 1
 
 # =========================================================
 # 5️⃣ ENCODING
 # =========================================================
 def encode(vocab, sentence):
-    return [
-        vocab.word2idx.get(w, UNK_IDX)
-        for w in sentence.split()
-    ]
+    return [vocab.word2idx.get(w, UNK_IDX) for w in sentence.split()]
 
 def encode_src(vocab, sentence):
     return encode(vocab, sentence) + [EOS_IDX]
@@ -95,57 +89,65 @@ class TranslationDataset(Dataset):
     def __getitem__(self, idx):
         ar, en = self.pairs[idx]
 
-        src = torch.tensor(
-            encode_src(self.vocab, ar),
-            dtype=torch.long
-        )
-
-        trg = torch.tensor(
-            encode_target(self.vocab, en),
-            dtype=torch.long
-        )
+        src = torch.tensor(encode_src(self.vocab, ar))
+        trg = torch.tensor(encode_target(self.vocab, en))
 
         return src, trg
 
 # =========================================================
-# 7️⃣ COLLATE FUNCTION
+# 7️⃣ COLLATE
 # =========================================================
 def collate_fn(batch):
     src_batch, trg_batch = zip(*batch)
 
-    src_batch = pad_sequence(
-        src_batch,
-        batch_first=True,
-        padding_value=PAD_IDX
-    )
-
-    trg_batch = pad_sequence(
-        trg_batch,
-        batch_first=True,
-        padding_value=PAD_IDX
-    )
+    src_batch = pad_sequence(src_batch, batch_first=True, padding_value=PAD_IDX)
+    trg_batch = pad_sequence(trg_batch, batch_first=True, padding_value=PAD_IDX)
 
     return src_batch, trg_batch
 
 # =========================================================
-# 8️⃣ LOADERS
+# 8️⃣ LOADERS (TRAIN / VAL / TEST)
 # =========================================================
-def get_loaders(batch_size=32):
-    pairs = load_data()
+def get_loaders(batch_size=32, max_train=20000, max_test=2000):
+
+    # ================= TRAIN =================
+    train_pairs = load_data("train", max_train)
 
     vocab = Vocab()
-    vocab.build_vocab(pairs)
+    vocab.build_vocab(train_pairs)
 
-    dataset = TranslationDataset(pairs, vocab)
+    full_dataset = TranslationDataset(train_pairs, vocab)
 
-    loader = DataLoader(
-        dataset,
+    val_size = int(0.1 * len(full_dataset))
+    train_size = len(full_dataset) - val_size
+
+    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=batch_size,
         shuffle=True,
         collate_fn=collate_fn
     )
 
-    return loader, vocab
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_fn
+    )
 
+    # ================= TEST =================
+    test_pairs = load_data("test", max_test)
+    test_dataset = TranslationDataset(test_pairs, vocab)
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        collate_fn=collate_fn
+    )
+
+    return train_loader, val_loader, test_loader, vocab 
 
  
