@@ -13,7 +13,7 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"    
 
 print("⏳ Loading Opus100 dataset...")
-# ✅ تم إزالة trust_remote_code لتفادي تهنيج التحميل والإيرور الشهير
+  
 dataset = load_dataset("opus100", "ar-en", split='train')
 
 num_samples = min(50000, len(dataset)) 
